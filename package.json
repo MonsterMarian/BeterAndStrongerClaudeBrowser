@@ -1,0 +1,8 @@
+{
+  "name": "better-and-stronger-claude-browser",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/unit.test.mjs",
+    "test:e2e": "node tests/e2e.mjs"
+  }
+}
