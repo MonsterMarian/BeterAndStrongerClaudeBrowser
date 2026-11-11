@@ -14,6 +14,24 @@ Claude Code -> Claude in Chrome -> javascript_tool on https://example.com
             -> Claude Browser Hands (service worker) -> chrome.management.*
 ```
 
+Bridge commands: `ping`, `list`, `get`, `enable`, `disable`, `reload`, `tabs`, `refresh`.
+
+### Inside an extension: `cdp.mjs`
+
+`management` cannot see into other extensions, so `skills/browser-hands/cdp.mjs` (Node 22+, zero deps) connects to your
+real Chrome over CDP - enabled at `chrome://inspect/#remote-debugging` (Chrome 144+, the same switch Chrome DevTools MCP
+`--autoConnect` uses) - and attaches to the extension's service worker:
+
+```
+node skills/browser-hands/cdp.mjs storage <extId> [local|sync|session|managed] [key..]   # saved settings/values
+node skills/browser-hands/cdp.mjs set <extId> local '{"debug":true}'                     # write them
+node skills/browser-hands/cdp.mjs logs <extId> 3                                         # console + uncaught errors (incl. startup)
+node skills/browser-hands/cdp.mjs eval <extId> 'await chrome.alarms.getAll()'            # anything else
+node skills/browser-hands/cdp.mjs targets
+```
+
+If the worker is asleep, storage/eval go through a temporary background tab on the extension's `manifest.json`.
+
 ### Install
 
 1. Copy or link the skill into Claude Code:
@@ -22,19 +40,21 @@ Claude Code -> Claude in Chrome -> javascript_tool on https://example.com
    ```
 2. Chrome -> `chrome://extensions` -> **Developer mode** -> **Load unpacked** -> `skills/browser-hands/extension`.
    The id is pinned by the manifest `key`: `ahpnamikcofnoeieghfbngknbcojihol`.
-3. Ask Claude e.g. *"turn off uBlock and reload the page"*.
+3. For `cdp.mjs`: open `chrome://inspect/#remote-debugging` and allow remote debugging; click **Allow** when Chrome asks.
+4. Ask Claude e.g. *"turn off uBlock and reload the page"* or *"what settings has FlowBridge saved, and did it throw any errors?"*.
 
 ### Security
 
 - Only pages on `https://example.com/*` can send commands (a static IANA page with no scripts). No other site can reach the bridge.
 - The bridge refuses to toggle itself and refuses to toggle Claude in Chrome without `force: true`.
 - The manifest `key` is a public key only; no private key is stored anywhere.
+- `cdp.mjs` is full DevTools access to the browser while remote debugging is on - turn it off in `chrome://inspect` when not needed.
 
 ### Tests
 
 ```powershell
 node --test tests/unit.test.mjs   # background.js against a mocked chrome.* API
-node tests/e2e.mjs                # real headless Chrome (temp profile), loads the bridge via CDP, drives it from example.com
+node tests/e2e.mjs                # real headless Chrome (temp profile): bridge from example.com + cdp.mjs storage/logs/eval on fixture extensions
 ```
 
 ### Prior art (what this borrows from)

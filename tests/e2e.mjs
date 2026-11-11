@@ -2,7 +2,8 @@
 // Loads the bridge + a dummy extension, then drives the bridge from https://example.com exactly like Claude in Chrome's javascript_tool would.
 // Usage: node tests/e2e.mjs [path-to-chrome]   (needs network access to example.com)
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { connect, targets, getStorage, setStorage, logs, evaluate } from '../skills/browser-hands/cdp.mjs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import assert from 'node:assert/strict';
@@ -13,7 +14,8 @@ const profile = mkdtempSync(join(tmpdir(), 'hands-e2e-'));
 
 const chrome = spawn(CHROME, [
   '--headless=new', '--no-first-run', '--no-default-browser-check', `--user-data-dir=${profile}`,
-  '--remote-debugging-pipe', '--enable-unsafe-extension-debugging', 'about:blank',
+  // pipe = loading test extensions; port = the websocket the CDP CLI uses (like chrome://inspect remote debugging in a real profile)
+  '--remote-debugging-pipe', '--enable-unsafe-extension-debugging', '--remote-debugging-port=0', 'about:blank',
 ], { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
 
 // CDP pipe protocol: NUL-terminated JSON; we write fd 3, Chrome writes fd 4.
@@ -67,8 +69,42 @@ try {
   assert.equal(r.ok, true, r.error); assert.equal(r.result.enabled, true);
   assert.match((await H('disable', { id: BRIDGE_ID })).error, /bridge itself/);
   assert.match((await H('bogus')).error, /unknown cmd/);
+  console.log('bridge OK: ping, list, disable, enable, reload, guards');
 
-  console.log('e2e OK: ping, list, disable, enable, reload, guards against real Chrome');
+  // refresh: reload a second tab found via `tabs`, prove it reloaded by a marker that disappears
+  const { targetId: t2 } = await cdp('Target.createTarget', { url: 'https://example.com/#second' });
+  const { sessionId: s2 } = await cdp('Target.attachToTarget', { targetId: t2, flatten: true });
+  const marker = () => cdp('Runtime.evaluate', { expression: 'document.readyState === "complete" && !window.__mark', returnByValue: true }, s2).then((r) => r.result.value).catch(() => false);
+  while (!(await marker())) await new Promise((r) => setTimeout(r, 100));
+  await cdp('Runtime.evaluate', { expression: 'window.__mark = 1' }, s2);
+  const second = (await H('tabs', { url: 'https://example.com/*' })).result.find((t) => t.url.endsWith('#second'));
+  assert.ok(second, 'tabs finds the second tab');
+  assert.equal((await H('refresh', { tabId: second.id })).result[0].id, second.id);
+  for (let i = 0; !(await marker()); i++) { assert.ok(i < 100, 'tab reloaded'); await new Promise((r) => setTimeout(r, 100)); }
+  console.log('bridge OK: tabs, refresh');
+
+  // CDP CLI against the websocket: storage, logs, eval inside other extensions
+  const { id: noisy } = await cdp('Extensions.loadUnpacked', { path: resolve('tests/fixtures/noisy-ext') });
+  while (!existsSync(join(profile, 'DevToolsActivePort'))) await new Promise((r) => setTimeout(r, 100));
+  const c = await connect(profile);
+  try {
+    for (let i = 0; !(await targets(c, noisy)).some((t) => t.type === 'service_worker'); i++) { assert.ok(i < 100, 'noisy SW running'); await new Promise((r) => setTimeout(r, 100)); }
+    for (let i = 0; (await getStorage(c, noisy)).count !== 1; i++) { assert.ok(i < 50, 'seeded storage'); await new Promise((r) => setTimeout(r, 100)); }
+    assert.deepEqual(await getStorage(c, noisy, 'local', ['apiKey']), { apiKey: 'abc' });
+    assert.deepEqual(await setStorage(c, noisy, 'local', { count: 2 }), { apiKey: 'abc', count: 2 });
+    // dummy has no service worker -> read through a temporary manifest.json tab
+    assert.deepEqual(await getStorage(c, dummy), {});
+    assert.deepEqual(await setStorage(c, dummy, 'local', { note: 'hi' }), { note: 'hi' });
+    assert.ok(!(await targets(c, dummy)).length, 'temporary tab closed');
+    const log = await logs(c, noisy, 0.5);
+    assert.ok(log.some((l) => l.level === 'error' && l.text === 'noisy startup error'), `startup error replayed: ${JSON.stringify(log)}`);
+    assert.equal(await evaluate(c, noisy, 'const a = await Promise.resolve(40); a + 2'), 42);
+    assert.deepEqual(await evaluate(c, noisy, 'chrome.storage.local.get("count")'), { count: 2 }); // un-awaited promise gets unwrapped
+    await assert.rejects(evaluate(c, noisy, 'throw new Error("nope")'), /nope/);
+    assert.throws(() => { getStorage(c, noisy, 'evil'); }, /area must be/);
+  } finally { c.close(); }
+  console.log('cdp OK: targets, storage get/set (SW + no-SW), logs replay, eval');
+  console.log('e2e OK');
 } finally {
   chrome.kill();
   await new Promise((r) => chrome.once('exit', r));

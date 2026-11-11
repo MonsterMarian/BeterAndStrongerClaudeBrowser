@@ -26,6 +26,12 @@ function boot() {
       get: async (id) => ({ ...exts.find((e) => e.id === id) }),
       setEnabled: async (id, on) => { calls.push([id, on]); exts.find((e) => e.id === id).enabled = on; },
     },
+    tabs: {
+      query: async ({ url }) => [{ id: 1, url: 'http://localhost:3000/' }, { id: 2, url: 'https://example.com/' }]
+        .filter((t) => !url || t.url.startsWith(url.replace('*', '').replace('/*', ''))),
+      get: async (id) => ({ id, url: 'http://localhost:3000/' }),
+      reload: async (id, opts) => { calls.push(['reload', id, opts.bypassCache]); },
+    },
   };
   new Function('chrome', SRC)(chrome);
   const send = (cmd, args) => new Promise((res) => listener({ cmd, args }, {}, res));
@@ -60,6 +66,15 @@ test('ambiguous / missing / unknown', async () => {
   assert.match((await send('disable', { id: 'nope' })).error, /no extension/);
   assert.match((await send('disable', {})).error, /missing/);
   assert.match((await send('rm -rf')).error, /unknown cmd/);
+});
+
+test('tabs and refresh', async () => {
+  const { send, calls } = boot();
+  assert.equal((await send('tabs')).result.length, 2);
+  assert.deepEqual((await send('refresh', { url: 'http://localhost:3000/*' })).result, [{ id: 1, url: 'http://localhost:3000/' }]);
+  await send('refresh', { tabId: 7, bypassCache: true });
+  assert.deepEqual(calls, [['reload', 1, false], ['reload', 7, true]]);
+  assert.match((await send('refresh', {})).error, /tabId or args.url/);
 });
 
 test('guards: self and Claude in Chrome', async () => {
