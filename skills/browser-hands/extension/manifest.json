@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Claude Browser Hands",
-  "version": "0.2.0",
-  "description": "Lets Claude (via Claude in Chrome on https://example.com) list, enable, disable and reload other extensions and refresh tabs.",
+  "version": "0.3.0",
+  "description": "Lets Claude (via Claude in Chrome on https://example.com) manage other extensions and refresh, recover and adopt tabs.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjBJQhiLXmJgEGv9gaWqX8LYCN62HlvY7sJroCLddnXP1SJ5Mskdc0ZdDeT7shhUGUVQ1u3xF7zl6F647sk7ZmV35VDjvibw0adU+5/KlZMArTh7zsWjD7yQ5cyX0Pfl2U/q6wsqxn84m5X2fzyNklLm8eEnmnrgNeohjpRigU79AGHPBaP+Ek+FGwUBZeNB+WC/50azvI0YQ/OIBAtaTbNmVSYuXH4lbnzUKp9yR4h1DN1uwwnBd1Y0hiJmeLZwRdG211K+aa5fZj2vcGw2teTJ7Ikk4DgjH5awzXRjsAA0c0Yqp00+0SI8EYV3S79VsoaQWmVcbuIc5KQhCIxbOFwIDAQAB",
-  "permissions": ["management", "tabs"],
+  "permissions": ["management", "tabs", "tabGroups"],
   "background": { "service_worker": "background.js" },
   "externally_connectable": { "matches": ["https://example.com/*"] }
 }

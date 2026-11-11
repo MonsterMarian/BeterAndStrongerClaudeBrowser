@@ -3,7 +3,7 @@
 // Usage: node tests/e2e.mjs [path-to-chrome]   (needs network access to example.com)
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
-import { connect, targets, getStorage, setStorage, logs, evaluate } from '../skills/browser-hands/cdp.mjs';
+import { connect, targets, getStorage, setStorage, logs, evaluate, hands, tabs, evalPage, net, recover, upload } from '../skills/browser-hands/cdp.mjs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import assert from 'node:assert/strict';
@@ -102,8 +102,64 @@ try {
     assert.deepEqual(await evaluate(c, noisy, 'chrome.storage.local.get("count")'), { count: 2 }); // un-awaited promise gets unwrapped
     await assert.rejects(evaluate(c, noisy, 'throw new Error("nope")'), /nope/);
     assert.throws(() => { getStorage(c, noisy, 'evil'); }, /area must be/);
+    console.log('cdp OK: targets, storage get/set (SW + no-SW), logs replay, eval');
+
+    // hands: bridge commands without Claude in Chrome - worker running, then worker stopped (woken via bridge page)
+    assert.ok((await hands(c, 'list')).some((e) => e.id === dummy));
+    assert.equal((await hands(c, 'reload', { id: dummy })).enabled, true);
+    await assert.rejects(hands(c, 'nope'), /unknown cmd/);
+    await cdp('ServiceWorker.enable', {}, sessionId);
+    await cdp('ServiceWorker.stopAllWorkers', {}, sessionId);
+    for (let i = 0; (await targets(c, BRIDGE_ID)).length; i++) { assert.ok(i < 50, 'bridge worker stopped'); await new Promise((r) => setTimeout(r, 100)); }
+    assert.equal((await hands(c, 'ping')).id, BRIDGE_ID);
+    console.log('cdp OK: hands (running + stopped worker)');
+
+    // tabs / page / net
+    assert.ok((await tabs(c)).some((t) => t.url.endsWith('#second')));
+    assert.equal(await evalPage(c, '#second', 'location.hash'), '#second');
+    const reqs = await net(c, '#second', { seconds: 2, reload: true, bodies: 'example\\.com' });
+    const doc = reqs.find((r) => r.url.startsWith('https://example.com/') && r.type === 'Document');
+    assert.equal(doc?.status, 200, JSON.stringify(reqs));
+    assert.match(doc.body, /Example Domain/);
+    console.log('cdp OK: tabs, page, net (+bodies)');
+
+    // frozen tabs: bridge recover (by tabId) and cdp recover (by title)
+    const frozen = async (title) => {
+      const { targetId } = await cdp('Target.createTarget', { url: `data:text/html,<title>${title}</title>` });
+      while (!(await tabs(c)).some((t) => t.title === title)) await new Promise((r) => setTimeout(r, 100));
+      await evalPage(c, title, 'setTimeout(() => { for (;;); }, 50); 1');
+      await new Promise((r) => setTimeout(r, 300));
+      const hung = evalPage(c, title, '1'); hung.catch(() => {}); // stays pending until the 30s timeout
+      assert.equal(await Promise.race([hung, new Promise((r) => setTimeout(() => r('frozen'), 1500))]), 'frozen');
+      return targetId;
+    };
+    await frozen('freeze1');
+    const ft = (await H('tabs')).result.find((t) => t.title === 'freeze1');
+    r = await H('recover', { tabId: ft.id });
+    assert.equal(r.ok, true, r.error); assert.notEqual(r.result.id, ft.id);
+    for (let i = 0; ; i++) { try { if (await evalPage(c, 'freeze1', '1 + 1') === 2) break; } catch {} assert.ok(i < 50, 'recovered tab responsive'); await new Promise((r) => setTimeout(r, 100)); }
+    const stuck = await frozen('freeze2');
+    const rec = await recover(c, 'freeze2');
+    assert.equal(rec.closed, stuck);
+    for (let i = 0; ; i++) { try { if (await evalPage(c, rec.opened, '1 + 1') === 2) break; } catch {} assert.ok(i < 50, 'cdp-recovered tab responsive'); await new Promise((r) => setTimeout(r, 100)); }
+    console.log('OK: recover frozen tab (bridge + cdp)');
+
+    // adopt: put the caller (example.com) into a group, then pull the #second tab into it
+    const caller = (await H('tabs')).result.find((t) => t.url === 'https://example.com/');
+    const gid = await evaluate(c, BRIDGE_ID, `chrome.tabs.group({ tabIds: [${caller.id}] })`);
+    r = await H('adopt', { tabId: second.id });
+    assert.equal(r.ok, true, r.error); assert.equal(r.result.groupId, gid);
+    console.log('bridge OK: adopt');
+
+    // upload: input is created by the click handler (like Google Flow), no OS dialog
+    const page = `<title>uploadpage</title><button id=b style="width:200px;height:80px">Upload</button><script>b.onclick=()=>{const i=document.createElement('input');i.type='file';i.onchange=()=>document.title='got:'+i.files[0].name;i.click()}</script>`;
+    const { targetId: up } = await cdp('Target.createTarget', { url: 'data:text/html,' + encodeURIComponent(page) });
+    while (!(await tabs(c)).some((t) => t.title === 'uploadpage')) await new Promise((r) => setTimeout(r, 100));
+    assert.equal((await upload(c, up, ['tests/fixtures/upload.txt'], { click: '#b', timeout: 10 })).mode, 'selectSingle');
+    for (let i = 0; (await evalPage(c, up, 'document.title')) !== 'got:upload.txt'; i++) { assert.ok(i < 50, 'file arrived'); await new Promise((r) => setTimeout(r, 100)); }
+    await assert.rejects(upload(c, up, ['nope.txt']), /file not found/);
+    console.log('cdp OK: upload via intercepted file chooser');
   } finally { c.close(); }
-  console.log('cdp OK: targets, storage get/set (SW + no-SW), logs replay, eval');
   console.log('e2e OK');
 } finally {
   chrome.kill();
