@@ -43,7 +43,7 @@ const H = (cmd, args = {}) => new Promise((ok, fail) => {
 | `ping` | - | bridge id + version |
 | `list` / `get` | - / `{id}` | extensions: `id, name, version, enabled, type, installType, mayDisable, disabledReason` |
 | `enable` / `disable` | `{id, force?}` | toggle; returns new state |
-| `reload` | `{id, force?}` | disable + enable = restart (new worker, JS re-read from disk) |
+| `reload` | `{id, force?}` | disable + enable = restart (new worker, JS re-read from disk). On the bridge's own id: full self-reload from disk incl. manifest |
 | `tabs` | `{url?}` | all tabs in all windows: `id, windowId, groupId, url, title, active`; `url` = match pattern |
 | `refresh` | `{tabId}` or `{url, bypassCache?}` | reload tab(s), e.g. `{url: '*://localhost/*'}` |
 | `recover` | `{tabId}` | reopen the URL at the same index/group, close the frozen tab; returns the new tab |
@@ -87,5 +87,5 @@ node <skill-dir>/cdp.mjs upload <tab> <file..> [--click=<css>] [--timeout=30]
 
 ## Setup (once, by the user)
 
-- **Bridge:** `chrome://extensions` -> Developer mode -> **Load unpacked** -> `<skill-dir>/extension`. Id must be `ahpnamikcofnoeieghfbngknbcojihol`. If a command says `unknown cmd` or a permission is missing, the bridge is outdated: user clicks ↻ on it.
+- **Bridge:** `chrome://extensions` -> Developer mode -> **Load unpacked** -> `<skill-dir>/extension`. Id must be `ahpnamikcofnoeieghfbngknbcojihol`. If a command says `unknown cmd`, the bridge runs old code: `H('reload', {id: 'ahpnamikcofnoeieghfbngknbcojihol'})`, wait ~2 s, reload the example.com tab, retry. Bridges older than 0.3.1 can't self-reload - then the user clicks ↻ on it once.
 - **cdp.mjs:** "No DevToolsActivePort"/cannot connect -> user opens `chrome://inspect/#remote-debugging` and allows remote debugging (Chrome 144+), then clicks **Allow** when Chrome asks. `CHROME_USER_DATA` overrides the profile dir.

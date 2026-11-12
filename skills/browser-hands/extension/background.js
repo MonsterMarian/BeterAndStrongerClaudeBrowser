@@ -41,7 +41,12 @@ const commands = {
   enable: async ({ id, force }) => { const e = await resolve(id); guard(e, force); return setEnabled(e, true); },
   disable: async ({ id, force }) => { const e = await resolve(id); guard(e, force); return setEnabled(e, false); },
   // Disable + enable restarts the extension (fresh service worker, JS re-read from disk); manifest edits still need chrome://extensions reload.
-  reload: async ({ id, force }) => { const e = await resolve(id); guard(e, force); await setEnabled(e, false); return setEnabled(e, true); },
+  reload: async ({ id, force }) => {
+    const e = await resolve(id);
+    // Self: full reload from disk (manifest + worker), so an updated bridge needs no click on chrome://extensions. Reply first, then reload.
+    if (e.id === chrome.runtime.id) { setTimeout(() => chrome.runtime.reload(), 200); return { ...pick(e), reloading: true }; }
+    guard(e, force); await setEnabled(e, false); return setEnabled(e, true);
+  },
   tabs: async ({ url }) => (await chrome.tabs.query(url ? { url } : {})).map(pickTab),
   // Reloads tabs by id or match pattern (e.g. "*://localhost/*") so content scripts of a reloaded extension get re-injected.
   refresh: async ({ tabId, url, bypassCache = false }) => {

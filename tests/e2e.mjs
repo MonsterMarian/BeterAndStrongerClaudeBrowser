@@ -159,6 +159,11 @@ try {
     for (let i = 0; (await evalPage(c, up, 'document.title')) !== 'got:upload.txt'; i++) { assert.ok(i < 50, 'file arrived'); await new Promise((r) => setTimeout(r, 100)); }
     await assert.rejects(upload(c, up, ['nope.txt']), /file not found/);
     console.log('cdp OK: upload via intercepted file chooser');
+
+    // Last, because it unloads the bridge here: CDP-loaded (session-only) extensions don't come back after
+    // chrome.runtime.reload(), Load-unpacked ones do - that part is verified live, not here.
+    assert.equal((await H('reload', { id: BRIDGE_ID })).result.reloading, true);
+    console.log('bridge OK: self-reload replies before reloading');
   } finally { c.close(); }
   console.log('e2e OK');
 } finally {

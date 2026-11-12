@@ -19,6 +19,7 @@ function boot() {
     runtime: {
       id: exts[0].id,
       getManifest: () => ({ version: '0.1.0' }),
+      reload: () => calls.push(['runtime.reload']),
       onMessageExternal: { addListener: (fn) => { listener = fn; } },
       onMessage: { addListener: (fn) => { internal = fn; } },
     },
@@ -111,6 +112,9 @@ test('internal onMessage uses the same commands', async () => {
 test('guards: self and Claude in Chrome', async () => {
   const { send, calls } = boot();
   assert.match((await send('disable', { id: 'Claude Browser Hands' })).error, /bridge itself/);
+  assert.equal((await send('reload', { id: 'Claude Browser Hands' })).result.reloading, true); // self-reload allowed
+  await new Promise((r) => setTimeout(r, 250));
+  assert.deepEqual(calls.splice(0), [['runtime.reload']]);
   assert.match((await send('reload', { id: 'fcoeoabgfenejglbffodgkkbkcdhcgfn' })).error, /force/);
   assert.deepEqual(calls, []);
   assert.equal((await send('disable', { id: 'fcoeoabgfenejglbffodgkkbkcdhcgfn', force: true })).ok, true);
