@@ -14,6 +14,7 @@ Two tools, same skill dir (`<skill-dir>` = folder of this file):
 
 | Symptom | Do |
 |---|---|
+| Bridge says `unknown cmd`, or its files changed (repo update) | self-reload it yourself: `H('reload', {id: 'ahpnamikcofnoeieghfbngknbcojihol'})`, wait ~2.5 s, poll `ping` until it answers with the new version. **Never ask the user to reload the bridge** |
 | You edited an extension's code (content script, worker) | bridge `reload` it, then `refresh` the affected tabs - never ask the user to click ↻ in chrome://extensions (except for `manifest.json` changes) |
 | "Browser extension is not connected" / tabs_context hangs | `node <skill-dir>/cdp.mjs hands reload '{"id":"fcoeoabgfenejglbffodgkkbkcdhcgfn","force":true}'`, wait ~3 s, retry `tabs_context_mcp`. Still down (wrong account, multiple browsers) -> tell the user. Meanwhile `cdp.mjs` still works for reading pages/network |
 | "renderer may be frozen" / JS or screenshot timeouts | bridge `recover {tabId}` (keeps position + tab group). If the bridge is unreachable: `cdp.mjs recover <tab>` |
@@ -87,5 +88,5 @@ node <skill-dir>/cdp.mjs upload <tab> <file..> [--click=<css>] [--timeout=30]
 
 ## Setup (once, by the user)
 
-- **Bridge:** `chrome://extensions` -> Developer mode -> **Load unpacked** -> `<skill-dir>/extension`. Id must be `ahpnamikcofnoeieghfbngknbcojihol`. If a command says `unknown cmd`, the bridge runs old code: `H('reload', {id: 'ahpnamikcofnoeieghfbngknbcojihol'})`, wait ~2 s, reload the example.com tab, retry. Bridges older than 0.3.1 can't self-reload - then the user clicks ↻ on it once.
+- **Bridge:** `chrome://extensions` -> Developer mode -> **Load unpacked** -> `<skill-dir>/extension`. Id must be `ahpnamikcofnoeieghfbngknbcojihol`. Later updates: self-reload (see playbook) - the example.com tab keeps working, no page reload needed. Only a bridge older than 0.3.1 (self-reload refused) needs the user's ↻ once.
 - **cdp.mjs:** "No DevToolsActivePort"/cannot connect -> user opens `chrome://inspect/#remote-debugging` and allows remote debugging (Chrome 144+), then clicks **Allow** when Chrome asks. `CHROME_USER_DATA` overrides the profile dir.

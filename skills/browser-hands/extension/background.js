@@ -8,7 +8,7 @@ const pick = (e) => ({
   id: e.id, name: e.name, version: e.version, enabled: e.enabled, type: e.type,
   installType: e.installType, mayDisable: e.mayDisable, disabledReason: e.disabledReason,
 });
-const pickTab = ({ id, windowId, groupId, url, title, active }) => ({ id, windowId, groupId, url, title, active });
+const pickTab = ({ id, windowId, groupId, url, pendingUrl, title, active }) => ({ id, windowId, groupId, url: url || pendingUrl, title, active });
 
 // Accepts an extension id or a unique case-insensitive name substring.
 async function resolve(q) {
