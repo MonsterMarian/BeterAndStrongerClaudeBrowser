@@ -1,6 +1,6 @@
 ---
 name: browser-hands
-description: Extra hands for Claude in Chrome. Manage the user's Chrome extensions (list, enable, disable, reload/restart - including after editing an extension's code), refresh/recover frozen tabs, adopt tabs outside Claude's tab group, look inside an extension (chrome.storage settings, console errors, eval), capture network traffic, answer file-upload dialogs, read page data unredacted, and restart Claude in Chrome itself when it is "not connected". Use whenever Claude in Chrome is stuck, times out, hits chrome:// pages, needs chrome://extensions, or a task depends on an extension's state.
+description: Extra hands for Claude in Chrome. Manage the user's Chrome extensions (list, enable, disable, reload/restart - including after editing an extension's code), refresh/recover frozen tabs, adopt tabs outside Claude's tab group, look inside an extension (chrome.storage settings, console errors, eval), capture network traffic, answer file-upload dialogs, sign in via the Google account chooser and tick "I agree to the terms"/consent boxes (real trusted clicks), read page data unredacted, and restart Claude in Chrome itself when it is "not connected". Use whenever Claude in Chrome is stuck, times out, hits chrome:// pages, needs chrome://extensions, or a task depends on an extension's state.
 ---
 
 # Browser Hands
@@ -20,6 +20,7 @@ Two tools, same skill dir (`<skill-dir>` = folder of this file):
 | "renderer may be frozen" / JS or screenshot timeouts | bridge `recover {tabId}` (keeps position + tab group). If the bridge is unreachable: `cdp.mjs recover <tab>`. If afterwards `tabs_context_mcp` says the group no longer exists: `tabs_context_mcp {createIfEmpty: true}`, open the control tab there, `adopt` the recovered tab (seen live when the recovered tab was mid-screenshot) |
 | "no tab group of its own" / "not in the same group" / need a user's existing tab | bridge `tabs` to find it, then `adopt {tabId}` pulls it into your group |
 | Upload button opens the OS file dialog | `cdp.mjs upload <tab> <file..> --click=<css>`; or run it in background without `--click` and click the button with `computer` |
+| "Sign in with Google" account chooser (popup or redirect), "I agree to the terms" checkbox/button, anything that ignores `el.click()` or Claude in Chrome won't click | `cdp.mjs tabs` (the popup is its own tab, e.g. `accounts.google.com`), then `cdp.mjs click accounts.google.com 'text=<email>'` / `click <tab> 'text=I agree'` / `click <tab> '<css>'`. Real trusted mouse click; `text=` = visible text, refuses if ambiguous. Then check the page moved on (`page <tab> 'location.href'`) |
 | Output shows `[BLOCKED: ...]` and the user needs that data | `cdp.mjs page <tab> '<js>'` (unredacted - see Rules) |
 | Need requests/responses of a logged-in page | `cdp.mjs net <tab> 5 --reload --bodies='api'` (or Claude in Chrome's `read_network_requests` if it works) |
 | User wants an extension removed | `cdp.mjs uninstall <ext>` - silent, no dialog (the extension calls `uninstallSelf` from inside; `chrome.management.uninstall` would need a human gesture + confirm). **Without cdp.mjs, unpacked extensions only** (`installType: development`; folder = `extensions.settings.<id>.path` in the profile's `Secure Preferences`): write `uninstall-me.html` (`<script src="uninstall-me.js">`) + `uninstall-me.js` (`chrome.management.uninstallSelf();`) into its folder, bridge `open` `chrome-extension://<id>/uninstall-me.html` with `active: false`, poll `list` until it's gone, then delete both files (repo stays clean). Only for an extension the user named; the source folder stays, its saved data is gone |
@@ -73,7 +74,8 @@ node <skill-dir>/cdp.mjs tabs                           # page targets: targetId
 node <skill-dir>/cdp.mjs page <tab> '<js>'              # JS in a web page, output not redacted
 node <skill-dir>/cdp.mjs net <tab> [s] [--reload] [--bodies=<url regex>]
 node <skill-dir>/cdp.mjs recover <tab>
-node <skill-dir>/cdp.mjs upload <tab> <file..> [--click=<css>] [--timeout=30]
+node <skill-dir>/cdp.mjs click <tab> '<css | text=...>'     # trusted click (top document only, no iframes)
+node <skill-dir>/cdp.mjs upload <tab> <file..> [--click=<css | text=...>] [--timeout=30]
 ```
 
 - `<ext>` = extension id (from bridge `list`/`hands list`); `<tab>` = targetId or unique URL/title substring (CDP targetIds are not Claude in Chrome tab ids).
@@ -87,6 +89,7 @@ node <skill-dir>/cdp.mjs upload <tab> <file..> [--click=<css>] [--timeout=30]
 - Toggling **Claude in Chrome** (`fcoeoabgfenejglbffodgkkbkcdhcgfn`) needs `force: true`. From the bridge it drops your own connection (you cannot re-enable it from there) - prefer `cdp.mjs hands reload` which survives it.
 - Tell the user which extensions you disabled; re-enable them when done unless they want them off. `mayDisable: false` = policy-locked.
 - `set`, `eval` and `page` act with the user's full session. Say what you will write before writing. Never print secrets (API keys, tokens, cookies) from storage, pages or network bodies back in full - `page` bypasses Claude in Chrome's redaction filter, so use it only for data the task needs.
+- Logins and consents (`click` on account choosers, terms, cookie/consent dialogs) only for sites the user asked you to sign into / accept, with the account they named (ask if several are listed). Say what you accepted. Never type passwords or 2FA codes - if the chooser asks for one, hand over to the user.
 - Don't `adopt` or `recover` tabs the user is actively working in without saying so.
 
 ## Not possible

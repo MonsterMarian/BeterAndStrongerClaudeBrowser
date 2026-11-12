@@ -14,7 +14,8 @@
 //   node cdp.mjs page <tab> '<js>'                   evaluate in a web page, output NOT redacted
 //   node cdp.mjs net <tab> [seconds=5] [--reload] [--bodies=<url regex>]   capture network requests (+ response bodies)
 //   node cdp.mjs recover <tab>                       frozen tab: reopen same URL, close the stuck one
-//   node cdp.mjs upload <tab> <file..> [--click=<css>] [--timeout=30]       answer the next file-chooser dialog with files
+//   node cdp.mjs click <tab> '<css | text=...>'      real (trusted) click: Google account chooser, "I agree" checkboxes/buttons
+//   node cdp.mjs upload <tab> <file..> [--click=<css | text=...>] [--timeout=30]   answer the next file-chooser dialog with files
 import { readFileSync, existsSync } from 'node:fs';
 import { join, resolve as resolvePath } from 'node:path';
 import { homedir } from 'node:os';
@@ -220,6 +221,36 @@ export async function recover(c, q) {
   return { closed: t.targetId, opened: targetId, url: t.url };
 }
 
+// Runs in the page: `css` selector or `text=<visible text>` (case-insensitive, innermost match) -> center point of the element.
+function findEl(q) {
+  let el;
+  if (q.startsWith('text=')) {
+    const t = q.slice(5).trim().toLowerCase();
+    const has = (e) => e.checkVisibility() && (e.innerText || e.value || e.getAttribute('aria-label') || '').toLowerCase().includes(t);
+    const hits = [...document.querySelectorAll('body *')].filter((e) => has(e) && ![...e.children].some(has));
+    if (hits.length > 1) throw new Error(`ambiguous ${q}: ${hits.slice(0, 5).map((e) => `<${e.tagName.toLowerCase()}> "${e.innerText.trim().slice(0, 60)}"`).join(', ')} - use a css selector`);
+    el = hits[0];
+  } else el = document.querySelector(q);
+  if (!el) throw new Error('no element matches ' + q);
+  el.scrollIntoView({ block: 'center' });
+  const r = el.getBoundingClientRect();
+  return { x: r.x + r.width / 2, y: r.y + r.height / 2, el: `<${el.tagName.toLowerCase()}> "${(el.innerText || el.value || el.getAttribute('aria-label') || '').trim().slice(0, 60)}"` };
+}
+
+// Real input events (isTrusted + user activation): file choosers, Google account chooser and consent checkboxes ignore el.click().
+async function clickIn(c, sessionId, q) {
+  const p = await run(c, sessionId, `(${findEl})(${JSON.stringify(q)})`);
+  for (const type of ['mousePressed', 'mouseReleased']) await c.send('Input.dispatchMouseEvent', { type, x: p.x, y: p.y, button: 'left', clickCount: 1 }, sessionId);
+  return p.el;
+}
+
+// shortcut: top document only (no iframes / shadow DOM, e.g. Google One Tap iframe or iframe cookie banners); add frame targeting when needed.
+export async function click(c, q, sel) {
+  if (!sel) throw new Error('missing <css | text=...>');
+  const { sessionId } = await attachTo(c, (await pageTarget(c, q)).targetId);
+  try { return { clicked: await clickIn(c, sessionId, sel) }; } finally { await c.send('Target.detachFromTarget', { sessionId }).catch(() => {}); }
+}
+
 // Intercepts the page's next file-chooser (incl. ones a click creates on the fly) and fills it - no OS dialog.
 // Without `click`, waits for someone (e.g. Claude in Chrome's computer tool) to click the upload button.
 export async function upload(c, q, files, { click, timeout = 30 } = {}) {
@@ -236,11 +267,7 @@ export async function upload(c, q, files, { click, timeout = 30 } = {}) {
       off = c.on(({ method, params, sessionId: s }) => { if (s === sessionId && method === 'Page.fileChooserOpened') { clearTimeout(t); ok(params); } });
     });
     opened.catch(() => {});
-    if (click) { // real input events = user activation, which file choosers require
-      const p = await run(c, sessionId, `(() => { const el = document.querySelector(${JSON.stringify(click)}); if (!el) throw new Error('no element matches ' + ${JSON.stringify(click)});
-        el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
-      for (const type of ['mousePressed', 'mouseReleased']) await c.send('Input.dispatchMouseEvent', { type, x: p.x, y: p.y, button: 'left', clickCount: 1 }, sessionId);
-    }
+    if (click) await clickIn(c, sessionId, click);
     const { backendNodeId, mode } = await opened;
     if (mode === 'selectSingle' && abs.length > 1) throw new Error('this input accepts a single file');
     await c.send('DOM.setFileInputFiles', { files: abs, backendNodeId }, sessionId);
@@ -272,6 +299,7 @@ async function main(argv) {
       page: () => evalPage(c, a1, rest.join(' ')),
       net: () => net(c, a1, { seconds: Number(rest[0] || 5), reload: !!flags.reload, bodies: flags.bodies }),
       recover: () => recover(c, a1),
+      click: () => click(c, a1, rest.join(' ')),
       upload: () => upload(c, a1, rest, { click: flags.click, timeout: Number(flags.timeout || 30) }),
     }[cmd] || (() => { console.error(`unknown command "${cmd}"\n${usage}`); process.exit(2); }))();
     console.log(JSON.stringify(r, null, 2));

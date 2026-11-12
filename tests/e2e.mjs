@@ -4,7 +4,7 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
-import { connect, targets, getStorage, setStorage, logs, evaluate, hands, tabs, evalPage, net, recover, upload, uninstall } from '../skills/browser-hands/cdp.mjs';
+import { connect, targets, getStorage, setStorage, logs, evaluate, hands, tabs, evalPage, net, recover, upload, click, uninstall } from '../skills/browser-hands/cdp.mjs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import assert from 'node:assert/strict';
@@ -194,6 +194,18 @@ try {
     for (let i = 0; (await evalPage(c, up, 'document.title')) !== 'got:upload.txt'; i++) { assert.ok(i < 50, 'file arrived'); await new Promise((r) => setTimeout(r, 100)); }
     await assert.rejects(upload(c, up, ['nope.txt']), /file not found/);
     console.log('cdp OK: upload via intercepted file chooser');
+
+    // click: trusted events only (like Google's account chooser), label text toggles its checkbox, ambiguity refused
+    const cpage = `<title>clickpage</title><label><input type=checkbox id=cb> I agree to the <a href=#>Terms</a></label><div id=acc>me@example.com</div><button>Next</button><button>Next</button><script>acc.onclick=(e)=>{if(e.isTrusted)document.title='picked'}</script>`;
+    const { targetId: cp } = await cdp('Target.createTarget', { url: 'data:text/html,' + encodeURIComponent(cpage) });
+    while (!(await tabs(c)).some((t) => t.title === 'clickpage')) await new Promise((r) => setTimeout(r, 100));
+    await click(c, cp, 'text=I agree');
+    assert.equal(await evalPage(c, cp, 'cb.checked'), true);
+    assert.match((await click(c, cp, 'text=ME@example.com')).clicked, /me@example\.com/);
+    assert.equal(await evalPage(c, cp, 'document.title'), 'picked');
+    await assert.rejects(click(c, cp, 'text=Next'), /ambiguous/);
+    await assert.rejects(click(c, cp, '#nope'), /no element matches/);
+    console.log('cdp OK: click (trusted, text=, ambiguity)');
 
     // uninstall: no-worker extension (temp tab route) and one with a worker; guards
     await assert.rejects(uninstall(c, BRIDGE_ID), /refusing/);
