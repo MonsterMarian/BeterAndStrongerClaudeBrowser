@@ -18,11 +18,12 @@ Built from the places where Claude in Chrome actually got stuck in real sessions
 | what an extension saved / threw | `cdp.mjs storage`, `set`, `logs`, `eval` |
 
 Claude in Chrome cannot open `chrome://extensions` (or any `chrome://` / `chrome-extension://` page).
-`browser-hands` adds a tiny companion extension with the `management`, `tabs` and `tabGroups` permissions; Claude talks to it from
-`https://example.com` through `javascript_tool`.
+`browser-hands` adds a tiny companion extension with the `management`, `tabs` and `tabGroups` permissions; Claude talks to it through
+`javascript_tool` from the tab it already works in (localhost) or from one control tab on
+[slashunderscore.com](https://slashunderscore.com/) (marked with a "Claude Browser Hands" badge).
 
 ```
-Claude Code -> Claude in Chrome -> javascript_tool on https://example.com
+Claude Code -> Claude in Chrome -> javascript_tool on https://slashunderscore.com/#claude-hands (or localhost)
             -> chrome.runtime.sendMessage(ahpnamikcofnoeieghfbngknbcojihol)  [externally_connectable]
             -> Claude Browser Hands (service worker) -> chrome.management.*
 ```
@@ -64,7 +65,10 @@ The bridge icon was generated with Google Flow through [FlowBridge](../Google-fl
 
 ### Security
 
-- Only `https://example.com/*` (a static IANA page with no scripts; the bridge restyles it into a "Claude Browser Hands" control tab) and `http://localhost` / `http://127.0.0.1` (your own dev servers, so no extra tab is needed while working on an app) can send commands. No other site can reach the bridge.
+- Only these origins can send commands; no other site can reach the bridge:
+  - `https://slashunderscore.com/*` - the control tab. **Whoever controls that site's scripts can drive your bridge**, so trust it like you trust this repo, or fork and put your own domain into `manifest.json` (`externally_connectable`, `content_scripts`, `web_accessible_resources`).
+  - `https://example.com/*` - fallback (a static IANA page with no scripts).
+  - `http://localhost` / `http://127.0.0.1` - your own dev servers, so no extra tab is needed while working on an app.
 - The bridge refuses to toggle itself and refuses to toggle Claude in Chrome without `force: true`.
 - The manifest `key` is a public key only; no private key is stored anywhere.
 - `cdp.mjs` is full DevTools access to the browser while remote debugging is on - turn it off in `chrome://inspect` when not needed.
@@ -74,7 +78,7 @@ The bridge icon was generated with Google Flow through [FlowBridge](../Google-fl
 
 ```powershell
 node --test tests/unit.test.mjs   # background.js against a mocked chrome.* API
-node tests/e2e.mjs                # real headless Chrome (temp profile): every bridge command from example.com and every cdp.mjs command
+node tests/e2e.mjs                # real headless Chrome (temp profile): every bridge command (from example.com, localhost and slashunderscore.com) and every cdp.mjs command
                                   # (fixture extensions, frozen tabs, tab groups, a click-created file input)
 ```
 

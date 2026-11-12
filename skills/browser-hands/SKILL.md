@@ -7,7 +7,7 @@ description: Extra hands for Claude in Chrome. Manage the user's Chrome extensio
 
 Two tools, same skill dir (`<skill-dir>` = folder of this file):
 
-- **Bridge** - companion extension *Claude Browser Hands* (`ahpnamikcofnoeieghfbngknbcojihol`), called from Claude in Chrome's `javascript_tool` on `https://example.com`.
+- **Bridge** - companion extension *Claude Browser Hands* (`ahpnamikcofnoeieghfbngknbcojihol`), called from Claude in Chrome's `javascript_tool` on its control tab (see below).
 - **`cdp.mjs`** - Node 22+ CLI (no deps) run from the shell. Talks CDP to the user's real Chrome, so it works **even when Claude in Chrome is stuck or disconnected**.
 
 ## When stuck - playbook
@@ -17,7 +17,7 @@ Two tools, same skill dir (`<skill-dir>` = folder of this file):
 | Bridge says `unknown cmd`, or its files changed (repo update) | self-reload it yourself: `H('reload', {id: 'ahpnamikcofnoeieghfbngknbcojihol'})`, wait ~2.5 s, poll `ping` until it answers with the new version. **Never ask the user to reload the bridge** |
 | You edited an extension's code (content script, worker) | bridge `reload` it, then `refresh` the affected tabs - never ask the user to click ↻ in chrome://extensions (except for `manifest.json` changes) |
 | "Browser extension is not connected" / tabs_context hangs | `node <skill-dir>/cdp.mjs hands reload '{"id":"fcoeoabgfenejglbffodgkkbkcdhcgfn","force":true}'`, wait ~3 s, retry `tabs_context_mcp`. Still down (wrong account, multiple browsers) -> tell the user. Meanwhile `cdp.mjs` still works for reading pages/network |
-| "renderer may be frozen" / JS or screenshot timeouts | bridge `recover {tabId}` (keeps position + tab group). If the bridge is unreachable: `cdp.mjs recover <tab>`. If afterwards `tabs_context_mcp` says the group no longer exists: `tabs_context_mcp {createIfEmpty: true}`, open example.com there, `adopt` the recovered tab (seen live when the recovered tab was mid-screenshot) |
+| "renderer may be frozen" / JS or screenshot timeouts | bridge `recover {tabId}` (keeps position + tab group). If the bridge is unreachable: `cdp.mjs recover <tab>`. If afterwards `tabs_context_mcp` says the group no longer exists: `tabs_context_mcp {createIfEmpty: true}`, open the control tab there, `adopt` the recovered tab (seen live when the recovered tab was mid-screenshot) |
 | "no tab group of its own" / "not in the same group" / need a user's existing tab | bridge `tabs` to find it, then `adopt {tabId}` pulls it into your group |
 | Upload button opens the OS file dialog | `cdp.mjs upload <tab> <file..> --click=<css>`; or run it in background without `--click` and click the button with `computer` |
 | Output shows `[BLOCKED: ...]` and the user needs that data | `cdp.mjs page <tab> '<js>'` (unredacted - see Rules) |
@@ -30,7 +30,7 @@ Two tools, same skill dir (`<skill-dir>` = folder of this file):
 
 1. Where to call from - never open extra pages for it:
    - the tab you already work in, if it is on `http://localhost` or `http://127.0.0.1` (any port) - the bridge answers there;
-   - otherwise **one** control tab in your group on `https://example.com` (the bridge restyles it to "Claude Browser Hands" so the user knows what it is). Reuse it for every call; close it when the task is done.
+   - otherwise **one** control tab in your group on `https://slashunderscore.com/#claude-hands` (the site stays, the bridge adds a "Claude Browser Hands" badge and title prefix so the user knows what it is). Reuse it for every call; close it when the task is done. Fallback if that site does not load: `https://example.com` (restyled the same way).
    - (only these origins can reach the bridge - opening it to every site would let any website toggle or remove the user's extensions; zero-tab alternative: `cdp.mjs hands` when remote debugging is on)
 2. `javascript_tool` (if the first call right after navigate errors with "browser-internal", retry):
 
@@ -54,7 +54,7 @@ const H = (cmd, args = {}) => new Promise((ok, fail) => {
 | `tabs` | `{url?}` | all tabs in all windows: `id, windowId, groupId, url, title, active`; `url` = match pattern |
 | `refresh` | `{tabId}` or `{url, bypassCache?}` | reload tab(s), e.g. `{url: '*://localhost/*'}` |
 | `recover` | `{tabId}` | reopen the URL at the same index/group, close the frozen tab; returns the new tab |
-| `adopt` | `{tabId, groupId?}` | move a tab into your group (default: the group of the calling example.com tab) |
+| `adopt` | `{tabId, groupId?}` | move a tab into your group (default: the group of the calling control tab) |
 
 `id` = extension id **or** unique case-insensitive name substring (`'ublock'`). Tab ids are the same ids Claude in Chrome uses.
 Claude in Chrome's output filter may redact bare id-like strings (`[BLOCKED: ...]`) - format results into text lines as above.
@@ -95,5 +95,5 @@ node <skill-dir>/cdp.mjs upload <tab> <file..> [--click=<css>] [--timeout=30]
 
 ## Setup (once, by the user)
 
-- **Bridge:** `chrome://extensions` -> Developer mode -> **Load unpacked** -> `<skill-dir>/extension`. Id must be `ahpnamikcofnoeieghfbngknbcojihol`. Later updates: self-reload (see playbook) - the example.com tab keeps working, no page reload needed. Only a bridge older than 0.3.1 (self-reload refused) needs the user's ↻ once.
+- **Bridge:** `chrome://extensions` -> Developer mode -> **Load unpacked** -> `<skill-dir>/extension`. Id must be `ahpnamikcofnoeieghfbngknbcojihol`. Later updates: self-reload (see playbook) - the control tab keeps working; reload it only if `control-tab.js` changed. Only a bridge older than 0.3.1 (self-reload refused) needs the user's ↻ once.
 - **cdp.mjs:** "No DevToolsActivePort"/cannot connect -> user opens `chrome://inspect/#remote-debugging` and allows remote debugging (Chrome 144+), then clicks **Allow** when Chrome asks. `CHROME_USER_DATA` overrides the profile dir.

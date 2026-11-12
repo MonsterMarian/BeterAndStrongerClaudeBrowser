@@ -101,7 +101,19 @@ try {
   } finally { srv.close(); }
   const { result: title } = await cdp('Runtime.evaluate', { expression: 'document.title', returnByValue: true }, sessionId);
   assert.equal(title.value, 'Claude Browser Hands');
-  console.log('bridge OK: callable from localhost, control tab self-explaining');
+  // primary control tab: the site stays, a badge is added only with #claude-hands
+  {
+    const { targetId: st } = await cdp('Target.createTarget', { url: 'https://slashunderscore.com/#claude-hands' });
+    const { sessionId: ss } = await cdp('Target.attachToTarget', { targetId: st, flatten: true });
+    for (let i = 0; ; i++) {
+      const { result } = await cdp('Runtime.evaluate', { expression: '!!document.getElementById("claude-hands-badge") && !!(window.chrome && chrome.runtime && chrome.runtime.sendMessage)', returnByValue: true }, ss);
+      if (result.value) break;
+      assert.ok(i < 100, 'slashunderscore.com control tab: badge + bridge'); await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.equal((await bridge(ss)('ping')).result.id, BRIDGE_ID);
+    await cdp('Target.closeTarget', { targetId: st });
+  }
+  console.log('bridge OK: callable from localhost and slashunderscore.com, control tabs self-explaining');
 
   // CDP CLI against the websocket: storage, logs, eval inside other extensions
   const { id: noisy } = await cdp('Extensions.loadUnpacked', { path: resolve('tests/fixtures/noisy-ext') });

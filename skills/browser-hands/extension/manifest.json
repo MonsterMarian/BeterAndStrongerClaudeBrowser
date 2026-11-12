@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Claude Browser Hands",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
   "action": { "default_title": "Claude Browser Hands", "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png" } },
-  "description": "Lets Claude (via Claude in Chrome on https://example.com) manage other extensions and refresh, recover and adopt tabs.",
+  "description": "Lets Claude (via Claude in Chrome, control tab on slashunderscore.com) manage extensions and refresh, recover and adopt tabs.",
+  "homepage_url": "https://slashunderscore.com/",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjBJQhiLXmJgEGv9gaWqX8LYCN62HlvY7sJroCLddnXP1SJ5Mskdc0ZdDeT7shhUGUVQ1u3xF7zl6F647sk7ZmV35VDjvibw0adU+5/KlZMArTh7zsWjD7yQ5cyX0Pfl2U/q6wsqxn84m5X2fzyNklLm8eEnmnrgNeohjpRigU79AGHPBaP+Ek+FGwUBZeNB+WC/50azvI0YQ/OIBAtaTbNmVSYuXH4lbnzUKp9yR4h1DN1uwwnBd1Y0hiJmeLZwRdG211K+aa5fZj2vcGw2teTJ7Ikk4DgjH5awzXRjsAA0c0Yqp00+0SI8EYV3S79VsoaQWmVcbuIc5KQhCIxbOFwIDAQAB",
   "permissions": ["management", "tabs", "tabGroups"],
   "background": { "service_worker": "background.js" },
-  "externally_connectable": { "matches": ["https://example.com/*", "http://localhost/*", "http://127.0.0.1/*"] },
-  "content_scripts": [{ "matches": ["https://example.com/*"], "js": ["control-tab.js"], "run_at": "document_end" }],
-  "web_accessible_resources": [{ "resources": ["icons/*"], "matches": ["https://example.com/*"] }]
+  "externally_connectable": { "matches": ["https://slashunderscore.com/*", "https://example.com/*", "http://localhost/*", "http://127.0.0.1/*"] },
+  "content_scripts": [{ "matches": ["https://slashunderscore.com/*", "https://example.com/*"], "js": ["control-tab.js"], "run_at": "document_end" }],
+  "web_accessible_resources": [{ "resources": ["icons/*"], "matches": ["https://slashunderscore.com/*", "https://example.com/*"] }]
 }
