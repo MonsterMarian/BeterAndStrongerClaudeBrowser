@@ -64,7 +64,7 @@ The bridge icon was generated with Google Flow through [FlowBridge](../Google-fl
 
 ### Security
 
-- Only pages on `https://example.com/*` can send commands (a static IANA page with no scripts). No other site can reach the bridge.
+- Only `https://example.com/*` (a static IANA page with no scripts; the bridge restyles it into a "Claude Browser Hands" control tab) and `http://localhost` / `http://127.0.0.1` (your own dev servers, so no extra tab is needed while working on an app) can send commands. No other site can reach the bridge.
 - The bridge refuses to toggle itself and refuses to toggle Claude in Chrome without `force: true`.
 - The manifest `key` is a public key only; no private key is stored anywhere.
 - `cdp.mjs` is full DevTools access to the browser while remote debugging is on - turn it off in `chrome://inspect` when not needed.

@@ -2,6 +2,7 @@
 // Loads the bridge + a dummy extension, then drives the bridge from https://example.com exactly like Claude in Chrome's javascript_tool would.
 // Usage: node tests/e2e.mjs [path-to-chrome]   (needs network access to example.com)
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { connect, targets, getStorage, setStorage, logs, evaluate, hands, tabs, evalPage, net, recover, upload, uninstall } from '../skills/browser-hands/cdp.mjs';
 import { tmpdir } from 'node:os';
@@ -84,6 +85,24 @@ try {
   for (let i = 0; !(await marker()); i++) { assert.ok(i < 100, 'tab reloaded'); await new Promise((r) => setTimeout(r, 100)); }
   console.log('bridge OK: tabs, refresh');
 
+  // no extra page on dev work: the bridge answers on localhost too; the example.com control tab explains itself
+  const srv = createServer((_q, res) => res.end('<!doctype html><title>dev app</title>dev'));
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  try {
+    const { targetId: lt } = await cdp('Target.createTarget', { url: `http://localhost:${srv.address().port}/` });
+    const { sessionId: ls } = await cdp('Target.attachToTarget', { targetId: lt, flatten: true });
+    for (let i = 0; ; i++) {
+      const { result } = await cdp('Runtime.evaluate', { expression: '!!(window.chrome && chrome.runtime && chrome.runtime.sendMessage)', returnByValue: true }, ls);
+      if (result.value) break;
+      assert.ok(i < 50, 'bridge reachable from localhost'); await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.equal((await bridge(ls)('ping')).result.id, BRIDGE_ID);
+    await cdp('Target.closeTarget', { targetId: lt });
+  } finally { srv.close(); }
+  const { result: title } = await cdp('Runtime.evaluate', { expression: 'document.title', returnByValue: true }, sessionId);
+  assert.equal(title.value, 'Claude Browser Hands');
+  console.log('bridge OK: callable from localhost, control tab self-explaining');
+
   // CDP CLI against the websocket: storage, logs, eval inside other extensions
   const { id: noisy } = await cdp('Extensions.loadUnpacked', { path: resolve('tests/fixtures/noisy-ext') });
   while (!existsSync(join(profile, 'DevToolsActivePort'))) await new Promise((r) => setTimeout(r, 100));
@@ -97,6 +116,9 @@ try {
     assert.deepEqual(await getStorage(c, dummy), {});
     assert.deepEqual(await setStorage(c, dummy, 'local', { note: 'hi' }), { note: 'hi' });
     for (let i = 0; (await targets(c, dummy)).length; i++) { assert.ok(i < 30, 'temporary tab closed'); await new Promise((r) => setTimeout(r, 100)); }
+    // documented flow for startup errors: restart the extension, then read logs (its worker may have idled out by now)
+    await H('reload', { id: noisy });
+    for (let i = 0; !(await targets(c, noisy)).some((t) => t.type === 'service_worker'); i++) { assert.ok(i < 100, 'noisy SW restarted'); await new Promise((r) => setTimeout(r, 100)); }
     const log = await logs(c, noisy, 0.5);
     assert.ok(log.some((l) => l.level === 'error' && l.text === 'noisy startup error'), `startup error replayed: ${JSON.stringify(log)}`);
     assert.equal(await evaluate(c, noisy, 'const a = await Promise.resolve(40); a + 2'), 42);

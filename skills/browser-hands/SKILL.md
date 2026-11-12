@@ -28,7 +28,10 @@ Two tools, same skill dir (`<skill-dir>` = folder of this file):
 
 ## Bridge (from Claude in Chrome)
 
-1. `tabs_context_mcp`, then a tab of your group on `https://example.com`.
+1. Where to call from - never open extra pages for it:
+   - the tab you already work in, if it is on `http://localhost` or `http://127.0.0.1` (any port) - the bridge answers there;
+   - otherwise **one** control tab in your group on `https://example.com` (the bridge restyles it to "Claude Browser Hands" so the user knows what it is). Reuse it for every call; close it when the task is done.
+   - (only these origins can reach the bridge - opening it to every site would let any website toggle or remove the user's extensions; zero-tab alternative: `cdp.mjs hands` when remote debugging is on)
 2. `javascript_tool` (if the first call right after navigate errors with "browser-internal", retry):
 
 ```js
