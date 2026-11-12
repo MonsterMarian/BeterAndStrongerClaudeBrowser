@@ -1,91 +1,97 @@
-# Better and Stronger Claude Browser
+<p align="center"><img src="skills/browser-hands/extension/icons/icon128.png" width="96" height="96" alt="Claude Browser Hands"></p>
 
-Skills that give **Claude in Chrome** abilities it does not have out of the box.
+# Claude Browser Hands
 
-## `browser-hands`
+A Claude Code skill that gives Claude in Chrome the abilities it lacks: managing extensions, recovering stuck tabs, and reaching into extensions, pages and network traffic.
 
-Built from the places where Claude in Chrome actually got stuck in real sessions:
+Two parts:
 
-| Stuck on | Hand |
+- **Bridge** - a small Chrome extension (`skills/browser-hands/extension`). Claude calls it from Claude in Chrome's `javascript_tool`.
+- **`cdp.mjs`** - a Node CLI that talks to your Chrome over the DevTools protocol. Works even when Claude in Chrome is stuck or disconnected.
+
+## What it fixes
+
+| Problem | Command |
 |---|---|
-| "click ↻ on chrome://extensions" after every content-script edit | bridge `reload` + `refresh` |
-| "Browser extension is not connected" | `cdp.mjs hands reload` restarts Claude in Chrome from outside |
-| "renderer may be frozen" timeouts | bridge `recover` / `cdp.mjs recover` |
-| tabs outside Claude's tab group | bridge `tabs` + `adopt` |
-| upload buttons that open the OS file dialog | `cdp.mjs upload` (intercepted file chooser) |
-| `[BLOCKED: ...]` redacted output | `cdp.mjs page` |
-| network of a logged-in page when the extension is down | `cdp.mjs net` |
-| what an extension saved / threw | `cdp.mjs storage`, `set`, `logs`, `eval` |
-
-Claude in Chrome cannot open `chrome://extensions` (or any `chrome://` / `chrome-extension://` page).
-`browser-hands` adds a tiny companion extension with the `management`, `tabs` and `tabGroups` permissions; Claude talks to it through
-`javascript_tool` from the tab it already works in (localhost) or from one control tab on
-[slashunderscore.com](https://slashunderscore.com/) (marked with a "Claude Browser Hands" badge).
-
-```
-Claude Code -> Claude in Chrome -> javascript_tool on https://slashunderscore.com/#claude-hands (or localhost)
-            -> chrome.runtime.sendMessage(ahpnamikcofnoeieghfbngknbcojihol)  [externally_connectable]
-            -> Claude Browser Hands (service worker) -> chrome.management.*
-```
+| Extension code changed, needs a reload in chrome://extensions | bridge `reload` + `refresh` |
+| "Browser extension is not connected" | `cdp.mjs hands reload` (restarts Claude in Chrome) |
+| "Renderer may be frozen" timeouts | bridge `recover`, `cdp.mjs recover` |
+| Tab outside Claude's tab group | bridge `tabs` + `adopt` |
+| Upload button opens the OS file dialog | `cdp.mjs upload` |
+| Output redacted as `[BLOCKED: ...]` | `cdp.mjs page` |
+| Network of a logged-in page | `cdp.mjs net` |
+| What an extension saved or threw | `cdp.mjs storage`, `set`, `logs`, `eval` |
+| Remove an extension | `cdp.mjs uninstall` (silent, no dialog) |
 
 Bridge commands: `ping`, `list`, `get`, `enable`, `disable`, `reload`, `open`, `focus`, `tabs`, `refresh`, `recover`, `adopt`.
 
-### `cdp.mjs` - hands that work without Claude in Chrome
+## How the bridge is called
 
-`skills/browser-hands/cdp.mjs` (Node 22+, zero deps) connects to your real Chrome over CDP - enabled at
-`chrome://inspect/#remote-debugging` (Chrome 144+, the same switch Chrome DevTools MCP `--autoConnect` uses):
+Claude in Chrome cannot open `chrome://` or `chrome-extension://` pages, so Claude talks to the bridge from an ordinary page via `externally_connectable`:
 
 ```
-node skills/browser-hands/cdp.mjs hands reload '{"id":"fcoeoabgfenejglbffodgkkbkcdhcgfn","force":true}'   # any bridge command over CDP (here: restart Claude in Chrome)
-node skills/browser-hands/cdp.mjs storage <extId> [local|sync|session|managed]      # an extension's saved settings/values
-node skills/browser-hands/cdp.mjs set <extId> local '{"debug":true}'                # write them
-node skills/browser-hands/cdp.mjs logs <extId> 3                                    # console + uncaught errors (incl. startup)
-node skills/browser-hands/cdp.mjs eval <extId> 'await chrome.alarms.getAll()'       # anything inside the extension
-node skills/browser-hands/cdp.mjs tabs | page <tab> '<js>' | recover <tab>
-node skills/browser-hands/cdp.mjs net <tab> 5 --reload --bodies='/api/'
-node skills/browser-hands/cdp.mjs upload <tab> photo.jpg --click='button.upload'
+Claude in Chrome -> javascript_tool on an allowed page
+                 -> chrome.runtime.sendMessage("ahpnamikcofnoeieghfbngknbcojihol", { cmd, args })
+                 -> bridge service worker -> chrome.management / chrome.tabs
 ```
 
-If an extension's worker is asleep, storage/eval/hands go through a temporary background tab on its `manifest.json`.
-Every call times out after 30 s (`HANDS_TIMEOUT`) instead of hanging on a frozen renderer.
+Allowed pages:
 
-### Install
+- `http://localhost`, `http://127.0.0.1` - the dev app Claude already works on, no extra tab.
+- `https://slashunderscore.com/#claude-hands` - the control tab otherwise. The site stays visible; the bridge adds a "Claude Browser Hands" badge.
+- `https://example.com` - fallback.
 
-1. Copy or link the skill into Claude Code:
+The bridge updates itself: `reload` on its own id re-reads it from disk, no click in chrome://extensions.
+
+## cdp.mjs
+
+Node 22+, no dependencies. Requires remote debugging enabled once at `chrome://inspect/#remote-debugging` (Chrome 144+).
+
+```
+node skills/browser-hands/cdp.mjs hands <cmd> ['<json args>']    # any bridge command, without Claude in Chrome
+node skills/browser-hands/cdp.mjs storage <ext> [area] [key..]   # read chrome.storage of an extension
+node skills/browser-hands/cdp.mjs set <ext> <area> '<json>'      # write it
+node skills/browser-hands/cdp.mjs logs <ext> [seconds]           # console messages and uncaught errors
+node skills/browser-hands/cdp.mjs eval <ext> '<js>'              # run JS inside an extension
+node skills/browser-hands/cdp.mjs uninstall <ext>                # remove an extension silently
+node skills/browser-hands/cdp.mjs tabs                           # list page tabs
+node skills/browser-hands/cdp.mjs page <tab> '<js>'              # run JS in a page, unredacted output
+node skills/browser-hands/cdp.mjs net <tab> [s] [--reload] [--bodies=<regex>]
+node skills/browser-hands/cdp.mjs recover <tab>
+node skills/browser-hands/cdp.mjs upload <tab> <file..> [--click=<css>]
+```
+
+Every call times out after 30 s (`HANDS_TIMEOUT`).
+
+## Install
+
+1. Link the skill into Claude Code:
    ```powershell
    New-Item -ItemType Junction -Path "$HOME\.claude\skills\browser-hands" -Target "$PWD\skills\browser-hands"
    ```
-2. Chrome -> `chrome://extensions` -> **Developer mode** -> **Load unpacked** -> `skills/browser-hands/extension`.
-   The id is pinned by the manifest `key`: `ahpnamikcofnoeieghfbngknbcojihol`.
-3. For `cdp.mjs`: open `chrome://inspect/#remote-debugging` and allow remote debugging; click **Allow** when Chrome asks.
-4. Ask Claude e.g. *"turn off uBlock and reload the page"* or *"what settings has FlowBridge saved, and did it throw any errors?"*.
+2. In `chrome://extensions`: Developer mode, Load unpacked, select `skills/browser-hands/extension`. The id is fixed: `ahpnamikcofnoeieghfbngknbcojihol`.
+3. For `cdp.mjs`: enable remote debugging at `chrome://inspect/#remote-debugging` and click Allow when Chrome asks.
 
-The bridge icon was generated with Google Flow through [FlowBridge](../Google-flow-for-AI) - queued, generated and downloaded by Claude itself.
-`extension/icons/make-icons.ps1 <source>` rebuilds the 16-128 px PNGs with transparent rounded corners.
+## Security
 
-### Security
+- Only the allowed pages above can send commands. Whoever controls the scripts on slashunderscore.com can drive the bridge; to avoid that, fork and put your own domain into `manifest.json` (`externally_connectable`, `content_scripts`, `web_accessible_resources`).
+- The bridge refuses to toggle itself, and toggles Claude in Chrome only with `force: true`.
+- While remote debugging is on, any local program has full access to the browser. Turn it off when not needed.
+- `cdp.mjs page` and `net` bypass Claude in Chrome's redaction of tokens and cookies.
 
-- Only these origins can send commands; no other site can reach the bridge:
-  - `https://slashunderscore.com/*` - the control tab. **Whoever controls that site's scripts can drive your bridge**, so trust it like you trust this repo, or fork and put your own domain into `manifest.json` (`externally_connectable`, `content_scripts`, `web_accessible_resources`).
-  - `https://example.com/*` - fallback (a static IANA page with no scripts).
-  - `http://localhost` / `http://127.0.0.1` - your own dev servers, so no extra tab is needed while working on an app.
-- The bridge refuses to toggle itself and refuses to toggle Claude in Chrome without `force: true`.
-- The manifest `key` is a public key only; no private key is stored anywhere.
-- `cdp.mjs` is full DevTools access to the browser while remote debugging is on - turn it off in `chrome://inspect` when not needed.
-- `cdp.mjs page`/`net` output is **not** run through Claude in Chrome's redaction filter (tokens, cookies, query strings).
+## Tests
 
-### Tests
-
-```powershell
-node --test tests/unit.test.mjs   # background.js against a mocked chrome.* API
-node tests/e2e.mjs                # real headless Chrome (temp profile): every bridge command (from example.com, localhost and slashunderscore.com) and every cdp.mjs command
-                                  # (fixture extensions, frozen tabs, tab groups, a click-created file input)
+```
+node --test tests/unit.test.mjs   # bridge logic against a mocked chrome API
+node tests/e2e.mjs                # real headless Chrome: every bridge and cdp.mjs command
 ```
 
-### Prior art (what this borrows from)
+## Icon
 
-- [ChromeDevTools/chrome-devtools-mcp](https://developer.chrome.com/docs/devtools/agents/extensions) `--categoryExtensions`: list/install/reload/uninstall extensions via CDP. Needs its own debuggable Chrome, not your everyday profile. The e2e test uses the same CDP `Extensions.loadUnpacked` trick.
-- [paulirish hot-reload-chrome-ext skill](https://github.com/paulirish/dotfiles/blob/d27a39a78a36bc5548e320f9bcc064f13b3c0323/agents/skills/hot-reload-chrome-ext/SKILL.md): restarting extensions via `management` / `runtime.reload`.
-- [noemica-io/open-claude-in-chrome](https://github.com/noemica-io/open-claude-in-chrome): open, unrestricted reimplementation of Claude in Chrome (no domain blocklist). No extension management.
+Generated with Google Flow. `skills/browser-hands/extension/icons/make-icons.ps1 <source>` rebuilds the 16-128 px PNGs.
 
-None of them let Claude in Chrome itself manage extensions in the user's real profile - that is the gap this fills.
+## Prior art
+
+- [chrome-devtools-mcp](https://developer.chrome.com/docs/devtools/agents/extensions) `--categoryExtensions` - extension tools over CDP, needs its own Chrome instance.
+- [paulirish hot-reload-chrome-ext](https://github.com/paulirish/dotfiles/blob/d27a39a78a36bc5548e320f9bcc064f13b3c0323/agents/skills/hot-reload-chrome-ext/SKILL.md) - restarting extensions via `management`.
+- [open-claude-in-chrome](https://github.com/noemica-io/open-claude-in-chrome) - open reimplementation of Claude in Chrome.
