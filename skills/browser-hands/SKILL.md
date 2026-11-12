@@ -22,6 +22,7 @@ Two tools, same skill dir (`<skill-dir>` = folder of this file):
 | Upload button opens the OS file dialog | `cdp.mjs upload <tab> <file..> --click=<css>`; or run it in background without `--click` and click the button with `computer` |
 | Output shows `[BLOCKED: ...]` and the user needs that data | `cdp.mjs page <tab> '<js>'` (unredacted - see Rules) |
 | Need requests/responses of a logged-in page | `cdp.mjs net <tab> 5 --reload --bodies='api'` (or Claude in Chrome's `read_network_requests` if it works) |
+| User wants an extension removed | `cdp.mjs uninstall <ext>` - silent, no dialog (the extension calls `uninstallSelf` from inside; `chrome.management.uninstall` would need a human gesture + confirm). Only for an extension the user named; an unpacked one keeps its source folder, its saved data is gone |
 | An extension misbehaves: what did it save, what did it throw | `cdp.mjs storage <ext>` / `logs <ext>` (reload first for startup errors) / `eval <ext> '<js>'` |
 | `chrome://` pages are blocked | the bridge covers chrome://extensions; for the rest say what the user must click |
 
@@ -64,6 +65,7 @@ node <skill-dir>/cdp.mjs storage <ext> [area] [key..]   # chrome.storage local|s
 node <skill-dir>/cdp.mjs set <ext> <area> '<json>'      # merge values into storage, prints the new state
 node <skill-dir>/cdp.mjs logs <ext> [seconds]           # console + uncaught errors, incl. buffered since worker start
 node <skill-dir>/cdp.mjs eval <ext> '<js>'              # JS inside the extension (top-level await ok)
+node <skill-dir>/cdp.mjs uninstall <ext> [--force]      # remove it silently (refuses bridge / Claude in Chrome without --force)
 node <skill-dir>/cdp.mjs tabs                           # page targets: targetId, url, title
 node <skill-dir>/cdp.mjs page <tab> '<js>'              # JS in a web page, output not redacted
 node <skill-dir>/cdp.mjs net <tab> [s] [--reload] [--bodies=<url regex>]
@@ -87,7 +89,6 @@ node <skill-dir>/cdp.mjs upload <tab> <file..> [--click=<css>] [--timeout=30]
 ## Not possible
 
 - Installing new extensions (Chrome 137+ ignores `--load-extension`; user uses *Load unpacked*), reloading another extension's changed `manifest.json` (chrome://extensions ↻; the bridge's own manifest reloads via self-reload).
-- Uninstalling another extension: `chrome.management.uninstall` needs a real user gesture and Chrome always asks. Do `open` on `chrome://extensions/?id=<id>` and let the user click **Remove** (clicking Chrome's UI from the shell is blocked by Claude Code's auto mode).
 
 ## Setup (once, by the user)
 

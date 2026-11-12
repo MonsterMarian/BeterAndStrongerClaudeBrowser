@@ -9,6 +9,7 @@
 //   node cdp.mjs set <ext> <area> '<json>'           merge JSON object into chrome.storage.<area>
 //   node cdp.mjs logs <ext> [seconds=3]              buffered + live console messages and uncaught errors
 //   node cdp.mjs eval <ext> '<js>'                   evaluate in the extension (top-level await ok), prints JSON
+//   node cdp.mjs uninstall <ext> [--force]           remove an extension silently (it calls uninstallSelf); needs the bridge to verify
 //   node cdp.mjs tabs                                all page tabs: targetId, url, title
 //   node cdp.mjs page <tab> '<js>'                   evaluate in a web page, output NOT redacted
 //   node cdp.mjs net <tab> [seconds=5] [--reload] [--bodies=<url regex>]   capture network requests (+ response bodies)
@@ -141,6 +142,21 @@ export function hands(c, cmd, args = {}) {
     : new Promise((ok, no) => chrome.runtime.sendMessage(${m}, (r) => r && r.ok ? ok(r.result) : no(new Error(r ? r.error : chrome.runtime.lastError?.message))))`);
 }
 
+// management.uninstall on another extension needs a user gesture + Chrome's confirm dialog; uninstallSelf needs neither,
+// so we make the target call it from inside. Verified through the bridge (gone from `get`).
+export async function uninstall(c, extId, { force = false } = {}) {
+  if (!force && (extId === BRIDGE || extId === 'fcoeoabgfenejglbffodgkkbkcdhcgfn')) throw new Error('refusing to uninstall the bridge or Claude in Chrome without --force');
+  const { sessionId, done } = await attach(c, extId);
+  // the context dies with the extension, so the evaluate may never answer
+  await Promise.race([c.send('Runtime.evaluate', { expression: 'chrome.management.uninstallSelf()', awaitPromise: true }, sessionId).catch(() => {}), sleep(3000)]);
+  await done();
+  for (let i = 0; i < 30; i++) {
+    try { await hands(c, 'get', { id: extId }); } catch (e) { if (/no extension matches/.test(e.message)) return { uninstalled: extId }; throw e; }
+    await sleep(200);
+  }
+  throw new Error(`${extId} is still installed after uninstallSelf`);
+}
+
 // Runtime.enable replays messages buffered since the context started, so startup errors show up too.
 export async function logs(c, extId, seconds = 3) {
   const ts = await targets(c, extId);
@@ -240,7 +256,7 @@ async function main(argv) {
   const flags = Object.fromEntries(argv.filter((a) => a.startsWith('--')).map((a) => { const [k, ...v] = a.slice(2).split('='); return [k, v.length ? v.join('=') : true]; }));
   const [cmd, a1, ...rest] = argv.filter((a) => !a.startsWith('--'));
   const usage = readFileSync(new URL(import.meta.url), 'utf8').split('\n').filter((l) => l.startsWith('//   ')).map((l) => l.slice(5)).join('\n');
-  const needExt = ['storage', 'set', 'logs', 'eval'].includes(cmd);
+  const needExt = ['storage', 'set', 'logs', 'eval', 'uninstall'].includes(cmd);
   if (!cmd || (needExt && !/^[a-p]{32}$/.test(a1 || ''))) { console.error(`usage:\n${usage}`); process.exit(2); }
   const c = await connect();
   try {
@@ -251,6 +267,7 @@ async function main(argv) {
       set: () => setStorage(c, a1, rest[0], JSON.parse(rest[1])),
       logs: () => logs(c, a1, Number(rest[0] || 3)),
       eval: () => evaluate(c, a1, rest.join(' ')),
+      uninstall: () => uninstall(c, a1, { force: !!flags.force }),
       tabs: () => tabs(c),
       page: () => evalPage(c, a1, rest.join(' ')),
       net: () => net(c, a1, { seconds: Number(rest[0] || 5), reload: !!flags.reload, bodies: flags.bodies }),

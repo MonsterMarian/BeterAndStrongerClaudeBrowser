@@ -3,7 +3,7 @@
 // Usage: node tests/e2e.mjs [path-to-chrome]   (needs network access to example.com)
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
-import { connect, targets, getStorage, setStorage, logs, evaluate, hands, tabs, evalPage, net, recover, upload } from '../skills/browser-hands/cdp.mjs';
+import { connect, targets, getStorage, setStorage, logs, evaluate, hands, tabs, evalPage, net, recover, upload, uninstall } from '../skills/browser-hands/cdp.mjs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import assert from 'node:assert/strict';
@@ -160,6 +160,14 @@ try {
     for (let i = 0; (await evalPage(c, up, 'document.title')) !== 'got:upload.txt'; i++) { assert.ok(i < 50, 'file arrived'); await new Promise((r) => setTimeout(r, 100)); }
     await assert.rejects(upload(c, up, ['nope.txt']), /file not found/);
     console.log('cdp OK: upload via intercepted file chooser');
+
+    // uninstall: no-worker extension (temp tab route) and one with a worker; guards
+    await assert.rejects(uninstall(c, BRIDGE_ID), /refusing/);
+    assert.deepEqual(await uninstall(c, dummy), { uninstalled: dummy });
+    assert.deepEqual(await uninstall(c, noisy), { uninstalled: noisy });
+    const left = (await H('list')).result.map((e) => e.id);
+    assert.ok(!left.includes(dummy) && !left.includes(noisy) && left.includes(BRIDGE_ID), JSON.stringify(left));
+    console.log('cdp OK: uninstall (silent, no dialog)');
 
     // Last, because it unloads the bridge here: CDP-loaded (session-only) extensions don't come back after
     // chrome.runtime.reload(), Load-unpacked ones do - that part is verified live, not here.
