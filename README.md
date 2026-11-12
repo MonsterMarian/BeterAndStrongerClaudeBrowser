@@ -59,6 +59,8 @@ Every call times out after 30 s (`HANDS_TIMEOUT`) instead of hanging on a frozen
 3. For `cdp.mjs`: open `chrome://inspect/#remote-debugging` and allow remote debugging; click **Allow** when Chrome asks.
 4. Ask Claude e.g. *"turn off uBlock and reload the page"* or *"what settings has FlowBridge saved, and did it throw any errors?"*.
 
+The bridge icon was generated with Google Flow through [FlowBridge](../Google-flow-for-AI) - queued, generated and downloaded by Claude itself.
+
 ### Security
 
 - Only pages on `https://example.com/*` can send commands (a static IANA page with no scripts). No other site can reach the bridge.

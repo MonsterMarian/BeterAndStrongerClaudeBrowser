@@ -48,6 +48,7 @@ export async function connect(userData = USER_DATA) {
   const send = (method, params = {}, sessionId) => new Promise((ok, fail) => {
     const id = ++seq;
     const timer = setTimeout(() => { pending.delete(id); fail(new Error(`${method} timed out after ${TIMEOUT / 1000}s - renderer frozen? try: cdp.mjs recover <tab>`)); }, TIMEOUT);
+    timer.unref(); // abandoned requests must not keep the CLI alive
     pending.set(id, { ok, fail, method, timer });
     ws.send(JSON.stringify({ id, method, params, sessionId }));
   });
@@ -55,7 +56,12 @@ export async function connect(userData = USER_DATA) {
 }
 
 const extOf = (url) => (url.match(/^chrome-extension:\/\/([a-p]{32})\//) || [])[1];
-const attachTo = (c, targetId) => c.send('Target.attachToTarget', { targetId, flatten: true });
+// A worker caught while starting can sit paused "waiting for debugger" and never answer evaluate; release it (no-op otherwise).
+const attachTo = async (c, targetId) => {
+  const r = await c.send('Target.attachToTarget', { targetId, flatten: true });
+  await c.send('Runtime.runIfWaitingForDebugger', {}, r.sessionId).catch(() => {});
+  return r;
+};
 
 export async function targets(c, extId) {
   const { targetInfos } = await c.send('Target.getTargets');
@@ -88,18 +94,25 @@ async function run(c, sessionId, expression) {
 // Session inside the extension: its service worker if running, else a background tab on its manifest.json (has chrome.* too).
 async function attach(c, extId) {
   const ts = await targets(c, extId);
-  let t = ts.find((x) => x.type === 'service_worker') || ts.find((x) => x.type === 'page');
+  let t = ts.find((x) => x.type === 'service_worker') || ts.find((x) => x.type === 'page' && !x.url.endsWith('/manifest.json')); // skip our own closing temp tabs
   let opened;
   if (!t) {
-    ({ targetId: opened } = await c.send('Target.createTarget', { url: `chrome-extension://${extId}/manifest.json`, background: true }));
+    const url = `chrome-extension://${extId}/manifest.json`;
+    ({ targetId: opened } = await c.send('Target.createTarget', { url, background: true }));
     t = { targetId: opened };
   }
   const { sessionId } = await attachTo(c, t.targetId);
-  const done = () => opened ? c.send('Target.closeTarget', { targetId: opened }) : c.send('Target.detachFromTarget', { sessionId });
-  for (let i = 0; opened; i++) { // wait until the fresh tab is an extension document
-    const { result } = await c.send('Runtime.evaluate', { expression: `location.protocol + document.readyState`, returnByValue: true }, sessionId);
-    if (result.value === 'chrome-extension:complete') break;
-    if (i > 50) { await done(); throw new Error(`extension ${extId} is not installed or not enabled`); }
+  const done = () => (opened ? c.send('Target.closeTarget', { targetId: opened }) : c.send('Target.detachFromTarget', { sessionId })).catch(() => {});
+  // Short tries: an evaluate sent while the tab still navigates never returns (Chrome 157.0.8103.51), so don't wait on one.
+  for (let i = 0; opened; i++) {
+    // the navigation swaps to an extension renderer that may start paused for the attached debugger
+    await c.send('Runtime.runIfWaitingForDebugger', {}, sessionId).catch(() => {});
+    const v = await Promise.race([
+      c.send('Runtime.evaluate', { expression: 'location.protocol + document.readyState', returnByValue: true }, sessionId).then((r) => r.result.value, () => null),
+      sleep(1000).then(() => null),
+    ]);
+    if (v === 'chrome-extension:complete') break;
+    if (i > 15) { await done(); throw new Error(`extension ${extId} is not installed or not enabled`); }
     await sleep(100);
   }
   return { sessionId, done };

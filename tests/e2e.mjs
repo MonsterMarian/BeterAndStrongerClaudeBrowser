@@ -58,6 +58,7 @@ try {
   const H = bridge(sessionId);
 
   assert.equal((await H('ping')).result.id, BRIDGE_ID);
+  assert.deepEqual((await H('get', { id: BRIDGE_ID })).result.icons, [16, 32, 48, 128], 'bridge icons load');
   const list = (await H('list')).result;
   assert.ok(list.some((e) => e.id === dummy && e.enabled), 'dummy listed and enabled');
 
@@ -95,7 +96,7 @@ try {
     // dummy has no service worker -> read through a temporary manifest.json tab
     assert.deepEqual(await getStorage(c, dummy), {});
     assert.deepEqual(await setStorage(c, dummy, 'local', { note: 'hi' }), { note: 'hi' });
-    assert.ok(!(await targets(c, dummy)).length, 'temporary tab closed');
+    for (let i = 0; (await targets(c, dummy)).length; i++) { assert.ok(i < 30, 'temporary tab closed'); await new Promise((r) => setTimeout(r, 100)); }
     const log = await logs(c, noisy, 0.5);
     assert.ok(log.some((l) => l.level === 'error' && l.text === 'noisy startup error'), `startup error replayed: ${JSON.stringify(log)}`);
     assert.equal(await evaluate(c, noisy, 'const a = await Promise.resolve(40); a + 2'), 42);

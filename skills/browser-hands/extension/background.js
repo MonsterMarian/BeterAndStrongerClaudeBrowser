@@ -7,6 +7,7 @@ const CLAUDE_IN_CHROME = 'fcoeoabgfenejglbffodgkkbkcdhcgfn';
 const pick = (e) => ({
   id: e.id, name: e.name, version: e.version, enabled: e.enabled, type: e.type,
   installType: e.installType, mayDisable: e.mayDisable, disabledReason: e.disabledReason,
+  icons: (e.icons || []).map((i) => i.size),
 });
 const pickTab = ({ id, windowId, groupId, url, pendingUrl, title, active }) => ({ id, windowId, groupId, url: url || pendingUrl, title, active });
 
