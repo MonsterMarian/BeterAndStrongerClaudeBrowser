@@ -48,6 +48,9 @@ const commands = {
     if (e.id === chrome.runtime.id) { setTimeout(() => chrome.runtime.reload(), 200); return { ...pick(e), reloading: true }; }
     guard(e, force); await setEnabled(e, false); return setEnabled(e, true);
   },
+  // Extensions may open chrome:// pages that Claude in Chrome cannot navigate to (e.g. chrome://extensions/?id=<id>).
+  open: async ({ url, active = true }) => { if (!url) throw new Error('missing args.url'); return pickTab(await chrome.tabs.create({ url, active })); },
+  focus: async ({ tabId }) => pickTab(await chrome.tabs.update(needTab(tabId), { active: true })),
   tabs: async ({ url }) => (await chrome.tabs.query(url ? { url } : {})).map(pickTab),
   // Reloads tabs by id or match pattern (e.g. "*://localhost/*") so content scripts of a reloaded extension get re-injected.
   refresh: async ({ tabId, url, bypassCache = false }) => {

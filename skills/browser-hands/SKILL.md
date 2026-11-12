@@ -45,6 +45,8 @@ const H = (cmd, args = {}) => new Promise((ok, fail) => {
 | `list` / `get` | - / `{id}` | extensions: `id, name, version, enabled, type, installType, mayDisable, disabledReason` |
 | `enable` / `disable` | `{id, force?}` | toggle; returns new state |
 | `reload` | `{id, force?}` | disable + enable = restart (new worker, JS re-read from disk). On the bridge's own id: full self-reload from disk incl. manifest |
+| `open` | `{url, active?}` | open a tab - including `chrome://` pages you cannot navigate to (e.g. `chrome://extensions/?id=<id>`) |
+| `focus` | `{tabId}` | make a tab the active one (return the user to their tab afterwards) |
 | `tabs` | `{url?}` | all tabs in all windows: `id, windowId, groupId, url, title, active`; `url` = match pattern |
 | `refresh` | `{tabId}` or `{url, bypassCache?}` | reload tab(s), e.g. `{url: '*://localhost/*'}` |
 | `recover` | `{tabId}` | reopen the URL at the same index/group, close the frozen tab; returns the new tab |
@@ -84,7 +86,8 @@ node <skill-dir>/cdp.mjs upload <tab> <file..> [--click=<css>] [--timeout=30]
 
 ## Not possible
 
-- Installing new extensions (Chrome 137+ ignores `--load-extension`; user uses *Load unpacked*), reloading changed `manifest.json` (chrome://extensions ↻), uninstalling another extension (Chrome always asks).
+- Installing new extensions (Chrome 137+ ignores `--load-extension`; user uses *Load unpacked*), reloading another extension's changed `manifest.json` (chrome://extensions ↻; the bridge's own manifest reloads via self-reload).
+- Uninstalling another extension: `chrome.management.uninstall` needs a real user gesture and Chrome always asks. Do `open` on `chrome://extensions/?id=<id>` and let the user click **Remove** (clicking Chrome's UI from the shell is blocked by Claude Code's auto mode).
 
 ## Setup (once, by the user)
 

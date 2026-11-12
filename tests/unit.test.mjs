@@ -38,6 +38,7 @@ function boot() {
       group: async (p) => { calls.push(['group', p]); },
       move: async (id, p) => { calls.push(['move', id, p]); },
       remove: async (id) => { calls.push(['remove', id]); },
+      update: async (id, p) => { calls.push(['update', id, p]); return { id, active: p.active }; },
     },
   };
   let internal;
@@ -102,6 +103,15 @@ test('adopt into caller group or explicit group', async () => {
   assert.deepEqual(calls, [['move', 2, { windowId: 9, index: -1 }], ['group', { groupId: 7, tabIds: 2 }]]);
   assert.match((await send('adopt', { tabId: 2 }, { tab: { groupId: -1 } })).error, /not in a tab group/);
   assert.equal((await send('adopt', { tabId: 2, groupId: 8 })).ok, true);
+});
+
+test('open creates a tab, url required', async () => {
+  const { send, calls } = boot();
+  assert.equal((await send('open', { url: 'chrome://extensions/' })).ok, true);
+  assert.deepEqual(calls, [['create', { url: 'chrome://extensions/', active: true }]]);
+  assert.match((await send('open', {})).error, /missing args.url/);
+  assert.equal((await send('focus', { tabId: 4 })).result.active, true);
+  assert.deepEqual(calls.at(-1), ['update', 4, { active: true }]);
 });
 
 test('internal onMessage uses the same commands', async () => {

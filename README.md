@@ -27,7 +27,7 @@ Claude Code -> Claude in Chrome -> javascript_tool on https://example.com
             -> Claude Browser Hands (service worker) -> chrome.management.*
 ```
 
-Bridge commands: `ping`, `list`, `get`, `enable`, `disable`, `reload`, `tabs`, `refresh`, `recover`, `adopt`.
+Bridge commands: `ping`, `list`, `get`, `enable`, `disable`, `reload`, `open`, `focus`, `tabs`, `refresh`, `recover`, `adopt`.
 
 ### `cdp.mjs` - hands that work without Claude in Chrome
 
@@ -60,6 +60,7 @@ Every call times out after 30 s (`HANDS_TIMEOUT`) instead of hanging on a frozen
 4. Ask Claude e.g. *"turn off uBlock and reload the page"* or *"what settings has FlowBridge saved, and did it throw any errors?"*.
 
 The bridge icon was generated with Google Flow through [FlowBridge](../Google-flow-for-AI) - queued, generated and downloaded by Claude itself.
+`extension/icons/make-icons.ps1 <source>` rebuilds the 16-128 px PNGs with transparent rounded corners.
 
 ### Security
 
